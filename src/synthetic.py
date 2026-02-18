@@ -172,6 +172,95 @@ class SyntheticGenerator:
         return t, prices, regimes
 
     @staticmethod
+    def generate_crypto_process(
+        n_steps: int,
+        dt: float = 4/24, # Default 4 hours
+        overall_vol: float = 0.8, # 80% annualized vol
+        jump_prob: float = 0.001, # Occasional jumps
+        seed: Optional[int] = None
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Generates Crypto-like market data (BTC/ETH style).
+        Characteristics:
+        - High Volatility
+        - Fat Tails (Jumps)
+        - Longer Trend Persistence
+        """
+        if seed is not None:
+            np.random.seed(seed)
+            
+        t = np.linspace(0, dt * n_steps, n_steps)
+        prices = np.zeros(n_steps)
+        regimes = np.zeros(n_steps)
+        start_price = 1000.0
+        prices[0] = start_price
+        
+        # Regime Parameters
+        # 0: Mean Reversion (Consolidation)
+        # 1: Bull Trend
+        # -1: Bear Trend
+        
+        current_regime = 0
+        current_price = start_price
+        sqrt_dt = np.sqrt(dt)
+        
+        # Regime Persistence (lower switch prob for longer 4H candles)
+        # If we want regimes to last weeks, and dt=4H (6 steps/day).
+        # Prob 0.01 => expected duration 100 steps => ~16 days.
+        switch_prob = 0.01 
+        
+        # Volatility Base
+        sigma_base = overall_vol
+        
+        for i in range(1, n_steps):
+            # Regime Switching
+            if np.random.random() < switch_prob:
+                if current_regime == 0:
+                    current_regime = np.random.choice([1, -1], p=[0.55, 0.45]) # Slight bull bias
+                else:
+                    current_regime = 0
+            
+            # Dynamics
+            if current_regime == 0: # Consolidation
+                # OU Process
+                # Mean is moving average of last N prices? Or fixed local mean?
+                # Let's use a local mean that drifts slowly
+                local_mu = np.mean(prices[max(0, i-50):i]) if i > 0 else start_price
+                theta = 0.5 # Weaker reversion
+                sigma = sigma_base * 0.8 # Lower vol in consolidation
+                
+                dx = theta * (local_mu - current_price) * dt + \
+                     sigma * current_price * np.random.normal(0, 1) * sqrt_dt
+                current_price += dx
+                
+            elif current_regime == 1: # Bull Trend
+                mu = 0.3 # 30% annualized drift (Healthy trend)
+                sigma = sigma_base
+                dS = mu * current_price * dt + \
+                     sigma * current_price * np.random.normal(0, 1) * sqrt_dt
+                current_price += dS
+                
+            elif current_regime == -1: # Bear Trend
+                mu = -0.3 # -30% annualized drift (Correction)
+                sigma = sigma_base * 1.2 # Higher vol in correction
+                dS = mu * current_price * dt + \
+                     sigma * current_price * np.random.normal(0, 1) * sqrt_dt
+                current_price += dS
+            
+            # Jumps
+            if np.random.random() < jump_prob:
+                jump_size = np.random.normal(0, 0.05) # 5% jump
+                current_price *= (1 + jump_size)
+            
+            # Floor price to avoid numerical issues
+            current_price = max(10.0, current_price)
+            
+            prices[i] = current_price
+            regimes[i] = current_regime
+            
+        return t, prices, regimes
+
+    @staticmethod
     def generate_training_batch(
         batch_size: int,
         seq_len: int,

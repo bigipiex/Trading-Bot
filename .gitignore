@@ -1,0 +1,9 @@
+src/__pycache__/backtest.cpython-312.pyc
+src/__pycache__/control.cpython-312.pyc
+src/__pycache__/model.cpython-312.pyc
+src/__pycache__/objective.cpython-312.pyc
+src/__pycache__/regime.cpython-312.pyc
+src/__pycache__/risk.cpython-312.pyc
+src/__pycache__/solver.cpython-312.pyc
+src/__pycache__/strategy_conditional.cpython-312.pyc
+src/__pycache__/synthetic.cpython-312.pyc

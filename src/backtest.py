@@ -22,12 +22,12 @@ class BacktestEngine:
                  mpc_solver: MPCSolver, 
                  initial_state: torch.Tensor,
                  risk_manager: RiskManager = None,
-                 transaction_cost_bps: float = 5.0, # Basis points (Fixed Fee)
-                 slippage_bps: float = 2.0,         # Base Slippage
-                 vol_slippage_coeff: float = 1.0,   # Slippage proportional to volatility
-                 market_impact_coeff: float = 0.0,  # Square-root impact coefficient
-                 daily_volume: float = 1e6,         # Daily volume for impact calculation
-                 dt: float = 0.01):
+                 transaction_cost_bps: float = 10.0, # Higher fee for crypto/swing (10bps)
+                 slippage_bps: float = 5.0,         # Higher base slippage
+                 vol_slippage_coeff: float = 1.0,   
+                 market_impact_coeff: float = 0.1,  # Impact matters more for larger positions
+                 daily_volume: float = 1e8,         # Crypto daily vol (e.g. 100M)
+                 dt: float = 4/24):                 # Default 4H candles
         self.mpc = mpc_solver
         self.state = initial_state.clone() # (Batch, StateDim+Inventory)
         self.risk_manager = risk_manager

@@ -28,7 +28,12 @@ class RegimeConditionalStrategy(nn.Module):
                  # Config
                  target_vol: float = 0.1,
                  scaling_factor: float = 1.0,
-                 sigmoid_alpha: float = 1000.0):
+                 sigmoid_alpha: float = 1000.0,
+                 # Swing Trading Config
+                 prediction_horizon: int = 1,
+                 signal_smoothing: float = 0.1, # EMA alpha (1.0 = no smoothing)
+                 signal_deadband: float = 0.0,
+                 min_holding_period: int = 0):
         super().__init__()
         self.regime_detector = regime_detector
         self.risk_manager = risk_manager
@@ -45,6 +50,17 @@ class RegimeConditionalStrategy(nn.Module):
         
         self.price_history = []
         self.window_size = regime_detector.window_size
+
+        # Swing State
+        self.prediction_horizon = prediction_horizon
+        self.signal_smoothing = signal_smoothing
+        self.signal_deadband = signal_deadband
+        self.min_holding_period = min_holding_period
+        
+        self.smoothed_signal = 0.0
+        self.last_trade_step = -min_holding_period - 1
+        self.current_step = 0
+        self.last_u = None
         
     def update_history(self, price: float):
         self.price_history.append(price)
@@ -87,6 +103,12 @@ class RegimeConditionalStrategy(nn.Module):
         return sig_trend, sig_mr, trend_strength
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
+        self.current_step += 1
+        
+        # Check Holding Period
+        if self.last_u is not None and (self.current_step - self.last_trade_step < self.min_holding_period):
+            return self.last_u
+        
         sig_trend, sig_mr, trend_strength = self.get_signal_components(state)
         
         # Soft Regime Probability
@@ -105,13 +127,36 @@ class RegimeConditionalStrategy(nn.Module):
         # Blend
         final_signal = p_trend * raw_T + p_mr * raw_MR
         
+        # Signal Smoothing (EMA)
+        if self.current_step == 1:
+            self.smoothed_signal = final_signal
+        else:
+            self.smoothed_signal = (1.0 - self.signal_smoothing) * self.smoothed_signal + \
+                                   self.signal_smoothing * final_signal
+                                   
+        # Deadband
+        if abs(self.smoothed_signal) < self.signal_deadband:
+            output_signal = 0.0
+        else:
+            output_signal = self.smoothed_signal
+            
+        # Holding Period Logic: If within lock period, do not update output_signal?
+        # But we don't know what the previous output was if we zeroed it or not.
+        # Let's ignore holding period inside Strategy for now, rely on smoothing to reduce turnover.
+        # User asked for "Structure Turnover Reduction", smoothing is key.
+        
         # Volatility Scaling
         vol = state[0, 1].item()
         safe_vol = max(vol, 1e-6)
         
         # Position
-        u_val = self.scaling_factor * final_signal / safe_vol
+        u_val = self.scaling_factor * output_signal / safe_vol
         u_tensor = torch.tensor([[u_val]], dtype=torch.float32)
+        
+        # Update state if signal changed significantly?
+        # For now, just update last_u every time we calculate fresh
+        self.last_u = u_tensor
+        self.last_trade_step = self.current_step
         
         # Risk Projection (Tail Risk Aware)
         if self.risk_manager:
